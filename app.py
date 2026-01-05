@@ -1,24 +1,21 @@
 import streamlit as st
-import google.generativeai as genai
+from google import genai
 import datetime
+import time
 
 # --- SAHIFA SOZLAMALARI ---
 st.set_page_config(page_title="Adolat AI", page_icon="⚖️", layout="wide")
 
 # --- API KALIT ---
-# Sizning kalitingiz xavfsiz joylandi
 API_KEY = "AIzaSyBJq338ZJDPpf3Lor54-nC5hvD1xxr5XgI"
 
 # --- MUKAMMAL MINIMALISTIK DIZAYN (CSS) ---
 st.markdown("""
     <style>
-    /* Asosiy fon - To'q, ko'zni charchatmaydigan "Deep Navy" */
     .stApp {
         background-color: #0f172a;
         color: #e2e8f0;
     }
-    
-    /* Sarlavha dizayni */
     .main-header {
         text-align: center;
         padding: 40px 0;
@@ -36,33 +33,25 @@ st.markdown("""
         color: #94a3b8;
         font-size: 1.1rem;
     }
-
-    /* Chat xabarlari dizayni - Apple style */
     .stChatMessage {
         padding: 1rem;
         border-radius: 12px;
         margin-bottom: 1rem;
         border: none;
     }
-    /* Foydalanuvchi xabari */
     div[data-testid="stChatMessage"]:nth-child(odd) {
-        background-color: #1e293b; /* Yengilroq to'q rang */
+        background-color: #1e293b;
         border: 1px solid #334155;
     }
-    /* AI xabari */
     div[data-testid="stChatMessage"]:nth-child(even) {
         background-color: transparent;
     }
-    
-    /* Input maydoni */
     .stTextInput input {
         background-color: #1e293b !important;
         color: white !important;
         border: 1px solid #334155 !important;
         border-radius: 10px;
     }
-    
-    /* Sidebar */
     section[data-testid="stSidebar"] {
         background-color: #020617;
         border-right: 1px solid #1e293b;
@@ -70,7 +59,6 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- Sarlavha qismi ---
 st.markdown("""
     <div class='main-header'>
         <h1>Adolat AI</h1>
@@ -78,41 +66,17 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# --- MODELNI SOZLASH (YANGI/ESKINI AJRATISH UCHUN) ---
+# --- YANGI MODEL SOZLAMALARI (XATO TUZATILDI) ---
 @st.cache_resource
-def load_smart_model():
+def get_ai_client():
     try:
-        genai.configure(api_key=API_KEY)
-        
-        # Bugungi sana (AI vaqtni bilishi uchun)
-        today = datetime.date.today().strftime("%Y-yil %d-avgust")
-        
-        # Tizim ko'rsatmasi (System Instruction)
-        # Bu yerda biz AIga "Eski qonunni ishlatma" deb qat'iy buyruq beramiz
-        lawyer_instruction = f"""
-        Bugungi sana: {today}.
-        Sen O'zbekistonning professional yuristisan.
-        VAZIFANG: Foydalanuvchi savoliga faqat AMALDAGI (kuchga ega) qonunlar asosida javob berish.
-        
-        QAT'IY QOIDALAR:
-        1. Javob berishdan oldin qonunning yiliga qara. Agar yangi tahriri bo'lsa, eskisini umuman ishlatma.
-        2. Lex.uz saytidagi "O'z kuchini yo'qotgan" degan statusga ega hujjatlarga tayanma.
-        3. Javobingda aniq modda va qonun nomini keltir.
-        4. Agar qonun yaqinda o'zgargan bo'lsa (masalan, Konstitutsiya yoki Mehnat kodeksi), albatta YANGI tahririni ishlat.
-        """
+        # 2026-yil standarti: Yangi genai Client
+        return genai.Client(api_key=API_KEY)
+    except Exception as e:
+        st.error(f"Ulanishda xato: {e}")
+        return None
 
-        # Biz avval qidiruv (search) funksiyasi bor modelni sinaymiz
-        # Chunki faqat Search orqali u "bu qonun bekor qilinganmi?" degan savolga aniq javob topadi
-        return genai.GenerativeModel(
-            'models/gemini-1.5-flash',
-            tools='google_search_retrieval',
-            system_instruction=lawyer_instruction
-        )
-    except:
-        # Agar Search ishlamasa, barqaror Pro modeliga o'tamiz, lekin baribir instruksiyani beramiz
-        return genai.GenerativeModel('gemini-pro')
-
-model = load_smart_model()
+client = get_ai_client()
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -133,27 +97,40 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 if prompt := st.chat_input("Huquqiy savolingizni kiriting..."):
-    # Foydalanuvchi xabari
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # AI javobi
     with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        
         try:
-            with st.spinner("🔍 Qonunchilik bazasi tahlil qilinmoqda..."):
-                # AIga eslatma: har safar "Yangi qonunni qidir" deb eslatamiz
-                full_prompt = f"Diqqat! Faqat AMALDAGI va KUCHGA EGA bo'lgan qonunlar bo'yicha javob ber. Eski qonunlarni inkor et. Savol: {prompt}"
-                
-                response = model.generate_content(full_prompt)
-                
-                # Javobni ko'rsatish
-                message_placeholder.markdown(response.text)
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
+            # Bugungi sana va instruksiya
+            today = datetime.date.today().strftime("%Y-yil %d-avgust")
+            system_instruction = f"""
+            Bugungi sana: {today}. Sen O'zbekistonning professional yuristisan.
+            VAZIFANG: Foydalanuvchi savoliga faqat AMALDAGI (kuchga ega) qonunlar asosida javob berish.
+            1. Javob berishdan oldin qonunning yiliga qara. Agar yangi tahriri bo'lsa, eskisini umuman ishlatma.
+            2. Lex.uz dagi amaldagi statusga tayan.
+            3. Javobingda aniq moddalarni keltir.
+            """
+            
+            full_prompt = f"{system_instruction}\n\nSavol: {prompt}"
+
+            # --- YOZISH EFFEKTI (STREAMING) ---
+            def stream_response():
+                # Gemini 2.0 orqali stream olish
+                response_stream = client.models.generate_content_stream(
+                    model='gemini-2.0-flash',
+                    contents=full_prompt,
+                    config={'tools': [{'google_search': {}}]} # Qidiruv funksiyasi qo'shildi
+                )
+                for chunk in response_stream:
+                    yield chunk.text
+
+            # Streamlit'ning write_stream funksiyasi orqali yozish ko'rsatiladi
+            full_response = st.write_stream(stream_response())
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
                 
         except Exception as e:
-            st.error("Uzr, tizimda vaqtincha nosozlik. Iltimos, qayta urinib ko'ring.")
-            # Xatoni dasturchi ko'rishi uchun konsolga chiqaramiz (saytda ko'rinmaydi)
+            st.error("Tizimda vaqtincha nosozlik. Iltimos, qayta urinib ko'ring.")
             print(f"Xatolik: {e}")
+
